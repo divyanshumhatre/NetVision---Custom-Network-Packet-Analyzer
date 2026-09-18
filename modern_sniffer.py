@@ -1,267 +1,243 @@
-import customtkinter as ctk
-from tkinter import ttk, messagebox, filedialog
+# NetVision - Custom Network Packet Analyzer
+# Project Team: Divyanshu Mhatre (426), Adheesh Nair (537), Deep Malbari (522), Muzamil Ahmad Wani (534), Abhijit Nair (535)
+# Pillai College of Engineering - Cryptography and System Security
+
+import os
 import threading
-from scapy.all import sniff, Ether, IP, TCP, UDP, ICMP, DNS, wrpcap
-import time
+from datetime import datetime
+import customtkinter as ctk
+from tkinter import ttk, filedialog, messagebox
+from scapy.all import sniff, wrpcap, Ether, IP, TCP, UDP, ICMP, DNS, Raw
 
-# Set modern UI themes
-ctk.set_appearance_mode("Dark")  # Modes: "System" (standard), "Dark", "Light"
-ctk.set_default_color_theme("blue")  # Themes: "blue" (standard), "green", "dark-blue"
+# Feature: Automatically hide the command prompt window on Windows
+if os.name == 'nt':
+    import ctypes
+    ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
 
-class ModernPacketSniffer(ctk.CTk):
+class NetVisionApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        
-        self.title("NetVision - Advanced Packet Analyzer")
-        self.geometry("1050x750")
-        
-        self.sniffing = False
-        self.packet_data = [] 
+        self.title("NetVision - Network Packet Analyzer")
+        self.geometry("1000x700")
+        ctk.set_appearance_mode("dark")
+        ctk.set_default_color_theme("blue")
+
+        # Application State
+        self.capturing = False
+        self.packet_list = []
         self.packet_count = 0
-        
+        self.auto_scroll = ctk.BooleanVar(value=True)
+
         self.setup_ui()
 
     def setup_ui(self):
-        # Configure Grid Layout
-        self.grid_rowconfigure(1, weight=1)
-        self.grid_rowconfigure(2, weight=1)
-        self.grid_columnconfigure(0, weight=1)
+        # Top Control Panel
+        control_frame = ctk.CTkFrame(self)
+        control_frame.pack(fill="x", padx=10, pady=10)
 
-        # ================= TOP CONTROL BAR =================
-        self.top_frame = ctk.CTkFrame(self, height=60, corner_radius=10)
-        self.top_frame.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="ew")
+        self.start_btn = ctk.CTkButton(control_frame, text="▶ Start Capture", fg_color="green", hover_color="darkgreen", command=self.start_capture)
+        self.start_btn.pack(side="left", padx=5, pady=5)
+
+        self.stop_btn = ctk.CTkButton(control_frame, text="⏹ Stop Capture", fg_color="red", hover_color="darkred", state="disabled", command=self.stop_capture)
+        self.stop_btn.pack(side="left", padx=5, pady=5)
+
+        self.clear_btn = ctk.CTkButton(control_frame, text="🗑️ Clear Data", fg_color="gray30", hover_color="gray20", command=self.clear_data)
+        self.clear_btn.pack(side="left", padx=5, pady=5)
+
+        self.export_pcap_btn = ctk.CTkButton(control_frame, text="💾 Save .PCAP", command=self.save_pcap)
+        self.export_pcap_btn.pack(side="left", padx=5, pady=5)
+
+        self.export_txt_btn = ctk.CTkButton(control_frame, text="📄 Save .TXT", command=self.save_txt)
+        self.export_txt_btn.pack(side="left", padx=5, pady=5)
+
+        # Feature: Auto-scroll toggle and packet counter
+        self.scroll_check = ctk.CTkCheckBox(control_frame, text="Auto-Scroll", variable=self.auto_scroll)
+        self.scroll_check.pack(side="right", padx=10)
         
-        self.title_label = ctk.CTkLabel(self.top_frame, text="Network Traffic Analyzer", font=ctk.CTkFont(size=20, weight="bold"))
-        self.title_label.pack(side="left", padx=20, pady=15)
+        self.count_label = ctk.CTkLabel(control_frame, text="Packets: 0", font=("Arial", 14, "bold"))
+        self.count_label.pack(side="right", padx=20)
 
-        self.start_btn = ctk.CTkButton(self.top_frame, text="▶ Start Capture", fg_color="#28a745", hover_color="#218838", 
-                                       command=self.start_sniffing, font=ctk.CTkFont(weight="bold"))
-        self.start_btn.pack(side="left", padx=10)
-        
-        self.stop_btn = ctk.CTkButton(self.top_frame, text="⏹ Stop Capture", fg_color="#dc3545", hover_color="#c82333", 
-                                      command=self.stop_sniffing, state="disabled", font=ctk.CTkFont(weight="bold"))
-        self.stop_btn.pack(side="left", padx=10)
+        # Main Table (Treeview)
+        table_frame = ctk.CTkFrame(self)
+        table_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
-        # Save PCAP Button
-        self.save_btn = ctk.CTkButton(self.top_frame, text="💾 Save PCAP", fg_color="#007bff", hover_color="#0056b3", 
-                                      command=self.save_pcap, font=ctk.CTkFont(weight="bold"))
-        self.save_btn.pack(side="left", padx=10)
-
-        # Save Text Report Button
-        self.txt_btn = ctk.CTkButton(self.top_frame, text="📄 Save Text", fg_color="#ffc107", hover_color="#e0a800", text_color="black",
-                                     command=self.save_text_report, font=ctk.CTkFont(weight="bold"))
-        self.txt_btn.pack(side="left", padx=10)
-
-        self.status_lbl = ctk.CTkLabel(self.top_frame, text="Status: Ready", text_color="gray", font=ctk.CTkFont(size=14))
-        self.status_lbl.pack(side="right", padx=20)
-
-        # ================= MIDDLE: PACKET TABLE =================
-        self.table_frame = ctk.CTkFrame(self, corner_radius=10)
-        self.table_frame.grid(row=1, column=0, padx=20, pady=10, sticky="nsew")
-        self.table_frame.pack_propagate(False)
-
-        # Style the standard Treeview to match Dark Mode
+        # Styling the Treeview for Dark Mode
         style = ttk.Style()
         style.theme_use("default")
-        style.configure("Treeview", 
-                        background="#2b2b2b", foreground="white", fieldbackground="#2b2b2b",
-                        rowheight=30, borderwidth=0, font=("Segoe UI", 10))
-        style.map("Treeview", background=[("selected", "#1f538d")])
-        style.configure("Treeview.Heading", 
-                        background="#333333", foreground="white", font=("Segoe UI", 11, "bold"), borderwidth=0)
+        style.configure("Treeview", background="#2b2b2b", foreground="white", fieldbackground="#2b2b2b", rowheight=25)
+        style.configure("Treeview.Heading", background="#1f538d", foreground="white")
+        style.map("Treeview", background=[('selected', '#14375e')])
 
-        columns = ("No", "Time", "Source", "Destination", "Protocol", "Length")
-        self.tree = ttk.Treeview(self.table_frame, columns=columns, show="headings")
+        columns = ("No.", "Time", "Source", "Destination", "Protocol", "Length", "Info")
+        self.tree = ttk.Treeview(table_frame, columns=columns, show="headings")
         
-        self.tree.heading("No", text="#")
-        self.tree.heading("Time", text="Time")
-        self.tree.heading("Source", text="Source IP")
-        self.tree.heading("Destination", text="Destination IP")
-        self.tree.heading("Protocol", text="Protocol")
-        self.tree.heading("Length", text="Length")
+        for col in columns:
+            self.tree.heading(col, text=col)
+            self.tree.column(col, width=120, anchor="center")
+        self.tree.column("No.", width=50)
+        self.tree.column("Time", width=100)
+        self.tree.column("Info", width=250, anchor="w")
         
-        self.tree.column("No", width=50, anchor="center")
-        self.tree.column("Time", width=100, anchor="center")
-        self.tree.column("Source", width=180, anchor="center")
-        self.tree.column("Destination", width=180, anchor="center")
-        self.tree.column("Protocol", width=100, anchor="center")
-        self.tree.column("Length", width=100, anchor="center")
-        
-        self.tree.pack(fill="both", expand=True, padx=2, pady=2)
-        self.tree.bind("<<TreeviewSelect>>", self.display_packet_details)
+        # Scrollbar for table
+        scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscroll=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        self.tree.pack(fill="both", expand=True)
 
-        # ================= BOTTOM: LAYER ANALYSIS =================
-        self.details_frame = ctk.CTkFrame(self, corner_radius=10)
-        self.details_frame.grid(row=2, column=0, padx=20, pady=(10, 20), sticky="nsew")
-        
-        self.details_label = ctk.CTkLabel(self.details_frame, text="Layer-wise Header Analysis", font=ctk.CTkFont(size=16, weight="bold"))
-        self.details_label.pack(anchor="w", padx=15, pady=(10, 0))
+        self.tree.bind("<<TreeviewSelect>>", self.on_packet_select)
 
-        self.details_box = ctk.CTkTextbox(self.details_frame, font=ctk.CTkFont(family="Consolas", size=13), 
-                                          fg_color="#1e1e1e", text_color="#4af626") # Hacker green text
-        self.details_box.pack(fill="both", expand=True, padx=15, pady=10)
-        self.details_box.insert("0.0", "Select a packet from the table to view its layer-wise breakdown here...")
+        # Bottom Analysis Box
+        self.analysis_box = ctk.CTkTextbox(self, height=200, font=("Consolas", 13), text_color="#2ECC71") # Hacker green text
+        self.analysis_box.pack(fill="x", padx=10, pady=(0, 10))
+        self.analysis_box.insert("0.0", "Select a packet to view OSI layer breakdown...")
+        self.analysis_box.configure(state="disabled")
 
-    def start_sniffing(self):
-        self.sniffing = True
+    def start_capture(self):
+        self.capturing = True
         self.start_btn.configure(state="disabled")
         self.stop_btn.configure(state="normal")
-        self.status_lbl.configure(text="Status: Capturing (Live)...", text_color="#28a745")
-        
-        self.sniff_thread = threading.Thread(target=self.sniff_packets, daemon=True)
-        self.sniff_thread.start()
+        self.capture_thread = threading.Thread(target=self.sniff_packets, daemon=True)
+        self.capture_thread.start()
 
-    def stop_sniffing(self):
-        self.sniffing = False
+    def stop_capture(self):
+        self.capturing = False
         self.start_btn.configure(state="normal")
         self.stop_btn.configure(state="disabled")
-        self.status_lbl.configure(text="Status: Stopped", text_color="#dc3545")
+
+    def clear_data(self):
+        self.packet_list.clear()
+        self.packet_count = 0
+        self.count_label.configure(text="Packets: 0")
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        self.analysis_box.configure(state="normal")
+        self.analysis_box.delete("0.0", "end")
+        self.analysis_box.insert("0.0", "Data cleared. Ready for new capture...")
+        self.analysis_box.configure(state="disabled")
 
     def sniff_packets(self):
-        try:
-            sniff(prn=self.process_packet, stop_filter=lambda p: not self.sniffing)
-        except Exception as e:
-            messagebox.showerror("Permission Error", f"Failed to start sniffing.\nEnsure you are running as Administrator/root.\n\nError details: {e}")
-            self.after(0, self.stop_sniffing)
+        sniff(prn=self.process_packet, stop_filter=lambda x: not self.capturing, store=False)
 
     def process_packet(self, packet):
-        if not self.sniffing:
-            return
-
+        self.packet_list.append(packet)
         self.packet_count += 1
-        self.packet_data.append(packet)
         
-        timestamp = time.strftime('%H:%M:%S', time.localtime(packet.time))
+        time_str = datetime.now().strftime("%H:%M:%S")
+        src = packet[Ether].src if Ether in packet else "Unknown"
+        dst = packet[Ether].dst if Ether in packet else "Unknown"
+        proto = "Unknown"
+        info = ""
         length = len(packet)
+
+        if IP in packet:
+            src = packet[IP].src
+            dst = packet[IP].dst
+            
+            if TCP in packet:
+                proto = "TCP"
+                if packet[TCP].sport == 80 or packet[TCP].dport == 80:
+                    proto = "HTTP"
+                info = f"Src Port: {packet[TCP].sport} -> Dst Port: {packet[TCP].dport}"
+            elif UDP in packet:
+                proto = "UDP"
+                if DNS in packet:
+                    proto = "DNS"
+                    info = f"Query: {packet[DNS].qd.qname.decode('utf-8', 'ignore') if packet[DNS].qd else 'N/A'}"
+                else:
+                    info = f"Src Port: {packet[UDP].sport} -> Dst Port: {packet[UDP].dport}"
+            elif ICMP in packet:
+                proto = "ICMP"
+                info = f"Type: {packet[ICMP].type} (Ping)"
+
+        item = self.tree.insert("", "end", values=(self.packet_count, time_str, src, dst, proto, length, info))
         
-        src_ip, dst_ip, protocol = "Unknown", "Unknown", "Unknown"
+        # Safe GUI update from background thread
+        self.after(0, self.update_counter)
+        if self.auto_scroll.get():
+            self.after(0, lambda: self.tree.see(item))
 
-        if packet.haslayer(IP):
-            src_ip = packet[IP].src
-            dst_ip = packet[IP].dst
+    def update_counter(self):
+        self.count_label.configure(text=f"Packets: {self.packet_count}")
+
+    def on_packet_select(self, event):
+        selected_item = self.tree.focus()
+        if not selected_item:
+            return
             
-            if packet.haslayer(ICMP): protocol = "ICMP"
-            elif packet.haslayer(DNS): protocol = "DNS"
-            elif packet.haslayer(TCP):
-                if packet[TCP].sport in [80, 8080] or packet[TCP].dport in [80, 8080]: protocol = "HTTP"
-                elif packet[TCP].sport == 443 or packet[TCP].dport == 443: protocol = "HTTPS"
-                else: protocol = "TCP"
-            elif packet.haslayer(UDP): protocol = "UDP"
-            else: protocol = "IPv4"
-        elif packet.haslayer(Ether):
-            src_ip = packet[Ether].src
-            dst_ip = packet[Ether].dst
-            protocol = "ARP/Ethernet"
-
-        self.after(0, self.tree.insert, "", "end", iid=self.packet_count-1, 
-                   values=(self.packet_count, timestamp, src_ip, dst_ip, protocol, length))
-
-        # Auto-scroll to bottom of table if active
-        self.after(0, self.tree.yview_moveto, 1)
-
-    def display_packet_details(self, event):
-        selected_item = self.tree.selection()
-        if not selected_item: return
+        values = self.tree.item(selected_item, "values")
+        if not values:
+            return
+            
+        packet_idx = int(values[0]) - 1
+        packet = self.packet_list[packet_idx]
         
-        index = int(selected_item[0])
-        packet = self.packet_data[index]
+        self.analysis_box.configure(state="normal")
+        self.analysis_box.delete("0.0", "end")
         
-        self.details_box.delete("0.0", "end")
-        analysis = self.generate_analysis_text(packet, index)
-        self.details_box.insert("0.0", analysis)
-
-    def generate_analysis_text(self, packet, index):
-        """Helper function to generate the text breakdown for both UI and saving"""
-        analysis = f"================ FRAME #{index + 1} SUMMARY ================\n\n"
+        # Build OSI Layer Breakdown
+        breakdown = f"--- FRAME {values[0]} ANALYSIS ---\n\n"
         
-        if packet.haslayer(Ether):
-            analysis += "[+] ETHERNET LAYER (OSI Layer 2)\n"
-            analysis += f"    ├─ Source MAC      : {packet[Ether].src}\n"
-            analysis += f"    ├─ Destination MAC : {packet[Ether].dst}\n"
-            analysis += f"    └─ Protocol Type   : {hex(packet[Ether].type)}\n\n"
+        if Ether in packet:
+            breakdown += "[+] ETHERNET LAYER (Layer 2)\n"
+            breakdown += f"    Source MAC:      {packet[Ether].src}\n"
+            breakdown += f"    Destination MAC: {packet[Ether].dst}\n"
+            breakdown += f"    Type:            {hex(packet[Ether].type)}\n\n"
             
-        if packet.haslayer(IP):
-            analysis += "[+] IP LAYER (OSI Layer 3)\n"
-            analysis += f"    ├─ Source IP       : {packet[IP].src}\n"
-            analysis += f"    ├─ Destination IP  : {packet[IP].dst}\n"
-            analysis += f"    ├─ TTL (Time/Live) : {packet[IP].ttl}\n"
-            analysis += f"    └─ Header Length   : {packet[IP].ihl * 4} bytes\n\n"
+        if IP in packet:
+            breakdown += "[+] NETWORK LAYER (Layer 3 - IPv4)\n"
+            breakdown += f"    Source IP:       {packet[IP].src}\n"
+            breakdown += f"    Destination IP:  {packet[IP].dst}\n"
+            breakdown += f"    TTL:             {packet[IP].ttl}\n\n"
             
-        if packet.haslayer(TCP):
-            analysis += "[+] TCP LAYER (OSI Layer 4)\n"
-            analysis += f"    ├─ Source Port     : {packet[TCP].sport}\n"
-            analysis += f"    ├─ Dest Port       : {packet[TCP].dport}\n"
-            analysis += f"    ├─ Sequence No     : {packet[TCP].seq}\n"
-            analysis += f"    ├─ Acknowledgment  : {packet[TCP].ack}\n"
-            analysis += f"    └─ Flags           : {packet[TCP].flags}\n\n"
+        if TCP in packet:
+            breakdown += "[+] TRANSPORT LAYER (Layer 4 - TCP)\n"
+            breakdown += f"    Source Port:     {packet[TCP].sport}\n"
+            breakdown += f"    Dest Port:       {packet[TCP].dport}\n"
+            breakdown += f"    Sequence No:     {packet[TCP].seq}\n"
+            breakdown += f"    Flags:           {packet[TCP].flags}\n\n"
             
-        elif packet.haslayer(UDP):
-            analysis += "[+] UDP LAYER (OSI Layer 4)\n"
-            analysis += f"    ├─ Source Port     : {packet[UDP].sport}\n"
-            analysis += f"    ├─ Dest Port       : {packet[UDP].dport}\n"
-            analysis += f"    └─ Length          : {packet[UDP].len} bytes\n\n"
+        elif UDP in packet:
+            breakdown += "[+] TRANSPORT LAYER (Layer 4 - UDP)\n"
+            breakdown += f"    Source Port:     {packet[UDP].sport}\n"
+            breakdown += f"    Dest Port:       {packet[UDP].dport}\n\n"
             
-        if packet.haslayer(ICMP):
-            analysis += "[+] ICMP LAYER (Network Diagnostic)\n"
-            analysis += f"    ├─ Type            : {packet[ICMP].type}\n"
-            analysis += f"    └─ Code            : {packet[ICMP].code}\n\n"
+        if ICMP in packet:
+            breakdown += "[+] DIAGNOSTIC LAYER (ICMP)\n"
+            breakdown += f"    Type:            {packet[ICMP].type}\n"
+            breakdown += f"    Code:            {packet[ICMP].code}\n\n"
             
-        if packet.haslayer(DNS):
-            analysis += "[+] DNS LAYER (Application Layer)\n"
-            analysis += f"    ├─ Transaction ID  : {hex(packet[DNS].id)}\n"
-            if packet.haslayer('DNS Question Record'):
-                analysis += f"    └─ Query Name      : {packet['DNS Question Record'].qname.decode('utf-8', 'ignore')}\n\n"
-                
-        return analysis
+        if DNS in packet and packet[DNS].qd:
+            breakdown += "[+] APPLICATION LAYER (Layer 7 - DNS)\n"
+            breakdown += f"    Query Name:      {packet[DNS].qd.qname.decode('utf-8', 'ignore')}\n\n"
+            
+        if Raw in packet:
+            payload = packet[Raw].load[:50] # Show first 50 bytes
+            breakdown += "[+] APPLICATION PAYLOAD (Raw Bytes)\n"
+            breakdown += f"    Data:            {payload}\n"
+            
+        self.analysis_box.insert("0.0", breakdown)
+        self.analysis_box.configure(state="disabled")
 
     def save_pcap(self):
-        # Prevent saving if no packets exist
-        if not self.packet_data:
-            messagebox.showwarning("Warning", "No packets to save. Please capture some traffic first.")
+        if not self.packet_list:
+            messagebox.showwarning("Empty", "No packets to save!")
             return
-            
-        # Open a "Save As" dialog box
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".pcap",
-            filetypes=[("PCAP files", "*.pcap"), ("All files", "*.*")],
-            title="Save Captured Packets"
-        )
-        
-        if file_path:
-            try:
-                wrpcap(file_path, self.packet_data)
-                messagebox.showinfo("Success", f"Successfully saved {len(self.packet_data)} packets to:\n{file_path}")
-            except Exception as e:
-                messagebox.showerror("Save Error", f"Failed to save file:\n{str(e)}")
+        filepath = filedialog.asksaveasfilename(defaultextension=".pcap", filetypes=[("PCAP Files", "*.pcap")])
+        if filepath:
+            wrpcap(filepath, self.packet_list)
+            messagebox.showinfo("Success", f"Saved {len(self.packet_list)} packets to {filepath}")
 
-    def save_text_report(self):
-        # Prevent saving if no packets exist
-        if not self.packet_data:
-            messagebox.showwarning("Warning", "No packets to save. Please capture some traffic first.")
+    def save_txt(self):
+        if not self.packet_list:
+            messagebox.showwarning("Empty", "No packets to save!")
             return
-            
-        # Open a "Save As" dialog box
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".txt",
-            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
-            title="Save Text Report"
-        )
-        
-        if file_path:
-            try:
-                with open(file_path, "w", encoding="utf-8") as f:
-                    f.write("================ NETVISION PACKET ANALYSIS REPORT ================\n")
-                    f.write(f"Total Packets Captured: {len(self.packet_data)}\n")
-                    f.write(f"Generated on: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-                    f.write("==================================================================\n\n")
-                    
-                    for index, packet in enumerate(self.packet_data):
-                        f.write(self.generate_analysis_text(packet, index) + "\n")
-                        
-                messagebox.showinfo("Success", f"Text report successfully saved to:\n{file_path}")
-            except Exception as e:
-                messagebox.showerror("Save Error", f"Failed to save text file:\n{str(e)}")
+        filepath = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text Files", "*.txt")])
+        if filepath:
+            with open(filepath, "w") as f:
+                for idx, pkt in enumerate(self.packet_list, 1):
+                    f.write(f"Packet {idx} Summary: {pkt.summary()}\n")
+            messagebox.showinfo("Success", f"Saved report to {filepath}")
 
 if __name__ == "__main__":
-    app = ModernPacketSniffer()
+    app = NetVisionApp()
     app.mainloop()
