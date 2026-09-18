@@ -1,4 +1,3 @@
-Markdown
 # NetVision - Network Packet Analyzer
 
 NetVision is a lightweight, custom GUI-based network packet sniffer developed in Python. Built as a mini-project for the Cryptography and System Security (CSS) course, it bypasses third-party tools like Wireshark to provide a transparent, code-level look at how raw network bytes are captured, filtered, and parsed into OSI layers.
@@ -19,39 +18,32 @@ NetVision is a lightweight, custom GUI-based network packet sniffer developed in
    ```bash
    git clone [https://github.com/yourusername/NetVision.git](https://github.com/yourusername/NetVision.git)
    cd NetVision
-Install the required Python libraries:
+   ```
+2. Install the required Python libraries:
+   ```bash
+   pip install scapy customtkinter
+   ```
 
-Bash
-pip install scapy customtkinter
-Usage
-Important: Packet sniffing requires administrative privileges to access the network interface card.
+## Usage
+**Important:** Packet sniffing requires administrative privileges to access the network interface card.
 
-Open your terminal or command prompt as an Administrator (or use sudo on Linux/Mac).
+1. Open your terminal or command prompt as an **Administrator** (or use `sudo` on Linux/Mac).
+2. Navigate to the project directory.
+3. Run the application:
+   ```bash
+   python modern_sniffer.py
+   ```
+4. Click **▶ Start Capture** to begin listening to network traffic.
+5. Select any packet in the table to view its layer-wise breakdown in the bottom terminal.
+6. Click **⏹ Stop Capture**, then use the export buttons to save your data as a `.pcap` or `.txt` file.
 
-Navigate to the project directory.
+## Project Team
+Developed by computer engineering students at **Pillai College of Engineering** for the Cryptography and System Security course.
+* Divyanshu Mhatre (426)
+* Adheesh Nair (537)
+* Deep Malbari (522)
+* Muzamil Ahmad Wani (534)
+* Abhijit Nair (535)
 
-Run the application:
-
-Bash
-python modern_sniffer.py
-Click ▶ Start Capture to begin listening to network traffic.
-
-Select any packet in the table to view its layer-wise breakdown in the bottom terminal.
-
-Click ⏹ Stop Capture, then use the export buttons to save your data as a .pcap or .txt file.
-
-Project Team
-Developed by computer engineering students at Pillai College of Engineering for the Cryptography and System Security course.
-
-Divyanshu Mhatre (426)
-
-Adheesh Nair (537)
-
-Deep Malbari (522)
-
-Muzamil Ahmad Wani (534)
-
-Abhijit Nair (535)
-
-Disclaimer
+## Disclaimer
 This tool is built strictly for educational and diagnostic purposes. Do not use it to intercept traffic on networks where you do not have explicit authorization.
