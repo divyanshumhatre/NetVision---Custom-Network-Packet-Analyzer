@@ -22,7 +22,6 @@ class NetVisionApp(ctk.CTk):
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
 
-        # Application State
         self.capturing = False
         self.packet_list = []
         self.packet_count = 0
@@ -31,7 +30,6 @@ class NetVisionApp(ctk.CTk):
         self.setup_ui()
 
     def setup_ui(self):
-        # Top Control Panel
         control_frame = ctk.CTkFrame(self)
         control_frame.pack(fill="x", padx=10, pady=10)
 
@@ -50,18 +48,15 @@ class NetVisionApp(ctk.CTk):
         self.export_txt_btn = ctk.CTkButton(control_frame, text="📄 Save .TXT", command=self.save_txt)
         self.export_txt_btn.pack(side="left", padx=5, pady=5)
 
-        # Feature: Auto-scroll toggle and packet counter
         self.scroll_check = ctk.CTkCheckBox(control_frame, text="Auto-Scroll", variable=self.auto_scroll)
         self.scroll_check.pack(side="right", padx=10)
         
         self.count_label = ctk.CTkLabel(control_frame, text="Packets: 0", font=("Arial", 14, "bold"))
         self.count_label.pack(side="right", padx=20)
 
-        # Main Table (Treeview)
         table_frame = ctk.CTkFrame(self)
         table_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
-        # Styling the Treeview for Dark Mode
         style = ttk.Style()
         style.theme_use("default")
         style.configure("Treeview", background="#2b2b2b", foreground="white", fieldbackground="#2b2b2b", rowheight=25)
@@ -78,7 +73,6 @@ class NetVisionApp(ctk.CTk):
         self.tree.column("Time", width=100)
         self.tree.column("Info", width=250, anchor="w")
         
-        # Scrollbar for table
         scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscroll=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
@@ -86,8 +80,7 @@ class NetVisionApp(ctk.CTk):
 
         self.tree.bind("<<TreeviewSelect>>", self.on_packet_select)
 
-        # Bottom Analysis Box
-        self.analysis_box = ctk.CTkTextbox(self, height=200, font=("Consolas", 13), text_color="#2ECC71") # Hacker green text
+        self.analysis_box = ctk.CTkTextbox(self, height=200, font=("Consolas", 13), text_color="#2ECC71")
         self.analysis_box.pack(fill="x", padx=10, pady=(0, 10))
         self.analysis_box.insert("0.0", "Select a packet to view OSI layer breakdown...")
         self.analysis_box.configure(state="disabled")
@@ -119,15 +112,10 @@ class NetVisionApp(ctk.CTk):
         sniff(prn=self.process_packet, stop_filter=lambda x: not self.capturing, store=False)
 
     def process_packet(self, packet):
-        self.packet_list.append(packet)
-        self.packet_count += 1
-        
-        time_str = datetime.now().strftime("%H:%M:%S")
         src = packet[Ether].src if Ether in packet else "Unknown"
         dst = packet[Ether].dst if Ether in packet else "Unknown"
-        proto = "Unknown"
+        proto = None
         info = ""
-        length = len(packet)
 
         if IP in packet:
             src = packet[IP].src
@@ -149,9 +137,18 @@ class NetVisionApp(ctk.CTk):
                 proto = "ICMP"
                 info = f"Type: {packet[ICMP].type} (Ping)"
 
+        # Strictly ignore any packet that is not one of our 5 targeted protocols
+        if not proto:
+            return
+
+        self.packet_list.append(packet)
+        self.packet_count += 1
+        
+        time_str = datetime.now().strftime("%H:%M:%S")
+        length = len(packet)
+
         item = self.tree.insert("", "end", values=(self.packet_count, time_str, src, dst, proto, length, info))
         
-        # Safe GUI update from background thread
         self.after(0, self.update_counter)
         if self.auto_scroll.get():
             self.after(0, lambda: self.tree.see(item))
@@ -174,7 +171,6 @@ class NetVisionApp(ctk.CTk):
         self.analysis_box.configure(state="normal")
         self.analysis_box.delete("0.0", "end")
         
-        # Build OSI Layer Breakdown
         breakdown = f"--- FRAME {values[0]} ANALYSIS ---\n\n"
         
         if Ether in packet:
@@ -211,7 +207,7 @@ class NetVisionApp(ctk.CTk):
             breakdown += f"    Query Name:      {packet[DNS].qd.qname.decode('utf-8', 'ignore')}\n\n"
             
         if Raw in packet:
-            payload = packet[Raw].load[:50] # Show first 50 bytes
+            payload = packet[Raw].load[:50] 
             breakdown += "[+] APPLICATION PAYLOAD (Raw Bytes)\n"
             breakdown += f"    Data:            {payload}\n"
             
